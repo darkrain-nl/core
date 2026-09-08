@@ -61,6 +61,23 @@ def _async_remove_stale_waiting_time(hass: HomeAssistant, serial: str) -> None:
         registry.async_remove(entity_id)
 
 
+def _async_remove_denied_meter_energy(
+    hass: HomeAssistant, serial: str, served: frozenset[str]
+) -> None:
+    """Drop meter sensors a model denies, so they don't linger unavailable."""
+    if "meter_energy" in served:
+        return
+    registry = er.async_get(hass)
+    for description in SENSOR_DESCRIPTIONS:
+        if description.component != "meter_energy":
+            continue
+        entity_id = registry.async_get_entity_id(
+            SENSOR_DOMAIN, DOMAIN, f"{serial}_{description.key}"
+        )
+        if entity_id is not None:
+            registry.async_remove(entity_id)
+
+
 async def _async_read_identity(entry: SofarConfigEntry, device: SofarInverter) -> None:
     """Read identity once, retrying a few times against a transient blip."""
     for attempt in range(_IDENTITY_ATTEMPTS):
@@ -147,6 +164,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: SofarConfigEntry) -> boo
     )
     await readings.async_config_entry_first_refresh()
     await settings.async_refresh()
+
+    _async_remove_denied_meter_energy(
+        hass, serial, frozenset(device.readings_components)
+    )
 
     # Not tied to a coordinator: identity never changes once read.
     await _async_read_identity(entry, device)
